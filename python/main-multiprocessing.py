@@ -12,9 +12,7 @@ import multiprocessing as mp
 
 def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,data_listener,corr_listener,plots):
     print("Working on Temp {0}".format(round(temp,3)))
-    if plots:
-        #initialize vars for plotting values
-        temp_arr, M_mean_arr, E_mean_arr, M_std_arr, E_std_arr, CV_arr, X_arr, CV_err_arr, X_err_arr = [],[],[],[],[],[],[],[],[]
+    
     try:
         #run the Ising model
         Msamp, Esamp, spin = run_ising(n,temp,num_steps,num_burnin,flip_prop,j,b,disable_tqdm=True)
@@ -34,10 +32,21 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
             E2_std = np.std(E2[-num_analysis:])
             CV = (B/temp)*(E2_mean-(E_mean**2))
             X = B*(M2_mean-(M_mean**2))
-            CV_err = math.sqrt((E2_std**2)+(2*E_mean*E_std)**2)
-            X_err = math.sqrt(M2_std**2+(2*M_mean*M_std)**2)
+			
+            #CVs = []
+            #Xs = []
+            #for i in range(0, 10):
+            #    M_means = np.average(Msamp[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
+            #    E_means = np.average(Esamp[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
+            #    M2_means = np.average(M2[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
+            #    E2_means = np.average(E2[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
+            #    CVs[i] = (B/temp)*(E2_means-(E_means**2))
+            #    Xs[i] = B*(M2_means-(M_means**2))
+            	
+            CV_err = 1 #np.std(CVs)
+            X_err = 1 #np.std(Xs)
 
-            data_array = [np.abs(M_mean),M_std,E_mean,E_std,CV,X,CV_err,X_err]
+            data_array = [np.abs(M_mean),M_std,E_mean,E_std,CV,CV_err,X,X_err]
             data_listener.put([temp]+data_array)
 
             corr = compute_autocorrelation(spin)
@@ -46,18 +55,6 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
             print("Done with Temp {0}".format(round(temp,3)))
             return True
 			
-            if plots:
-                #for plotting
-                M_mean, E_mean, M_std, E_std, CV, X, CV_err, X_err = get_plot_values(temp,Msamp,Esamp,num_analysis)
-                temp_arr.append(temp)
-                M_mean_arr.append(M_mean)
-                E_mean_arr.append(E_mean)
-                M_std_arr.append(M_std)
-                E_std_arr.append(E_std)
-                CV_arr.append(CV)
-                X_arr.append(X)
-                CV_err_arr.append(CV_err)
-                X_err_arr.append(X_err)
         except:
             logging.error("Temp="+str(round(temp,3))+": Statistical Calculation Failed. No Data Written.")
             return False
@@ -70,10 +67,6 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
 
     except:
         logging.error("Temp="+str(round(temp,3))+": Simulation Failed. No Data Written")
-    
-    if plots:
-        plot_graphs(temp_arr, M_mean_arr, E_mean_arr, M_std_arr, E_std_arr, CV_arr, X_arr, CV_err_arr, X_err_arr)
-        print("plotting")
 		
 #simulation options (enter python main.py --help for details)
 @click.command()
@@ -82,9 +75,9 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
 @click.option('--t_step', default=0.1, prompt='Temp Step Size', help='Temperature Step Size', type=float)
 
 @click.option('--n', prompt='Lattice Size', help='Lattice Size (NxN)',type=int)
-@click.option('--num_steps', default=100000, help='Total Number of Steps',type=int)
+@click.option('--num_steps', default=110000, help='Total Number of Steps',type=int)
 @click.option('--num_analysis', default=50000, help='Number of Steps used in Analysis',type=int)
-@click.option('--num_burnin', default=0, help='Total Number of Burnin Steps',type=int)
+@click.option('--num_burnin', default=50000, help='Total Number of Burnin Steps',type=int)
 
 @click.option('--j', default=1.0, help='Interaction Strength',type=float)
 @click.option('--b', default=0.0, help='Applied Magnetic Field',type=float)
@@ -97,6 +90,34 @@ def main(t_min,t_max,t_step,n,num_steps,num_analysis,num_burnin,j,b,flip_prop,ou
     data_filename, corr_filename = initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop)
     run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,plots)
     print('\n\nSimulation Finished! Data written to '+ data_filename)
+    if plots:
+        #initialize vars for plotting values
+        temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr = [],[],[],[],[],[],[],[],[]
+        try:
+            with open(data_filename,'r') as csvdat_file:
+                reader = csv.reader(csvdat_file, delimiter=',', lineterminator='\n')
+                param_header = next(reader)
+                param = next(reader)
+                line3 = next(reader)
+                dat_header = next(reader)
+                print("skipping headers")
+                # iterate over remaining lines
+                for row in reader:
+                    print(row)
+                    temp_arr.append(float(row[0]))
+                    M_mean_arr.append(float(row[1]))
+                    M_std_arr.append(float(row[2]))
+                    E_mean_arr.append(float(row[3]))
+                    E_std_arr.append(float(row[4]))
+                    CV_arr.append(float(row[5]))
+                    CV_err_arr.append(float(row[6]))
+                    X_arr.append(float(row[7]))
+                    X_err_arr.append(float(row[8]))
+            plot_graphs(temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr)
+            print("plotting")
+        except:
+            logging.error('Could not read dat file.')
+            sys.exit()
 
 def initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop):
     check_step_values(num_steps, num_analysis, num_burnin)
@@ -104,29 +125,8 @@ def initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_pr
     write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop)
     print('\nSimulation Started! Data will be written to ' + data_filename + '\n')
     return data_filename, corr_filename
-	
-def get_plot_values(temp,Msamp,Esamp,num_analysis): #only for plotting at end
-    try:
-        K_b = 1
-        B = 1/(K_b*temp)
-        M_mean = np.average(Msamp[-num_analysis:])
-        E_mean = np.average(Esamp[-num_analysis:])
-        M2_mean = np.average((Msamp[-num_analysis:])**2)
-        E2_mean = np.average((Esamp[-num_analysis:])**2)
-        M_std = np.std(Msamp[-num_analysis:])
-        E_std = np.std(Esamp[-num_analysis:])
-        M2_std = np.std((Msamp[-num_analysis:])**2)
-        E2_std = np.std((Esamp[-num_analysis:])**2)
-        CV = (B/temp)*(E2_mean-(E_mean**2))
-        X = B*(M2_mean-(M_mean**2))
-        CV_err = math.sqrt(E2_std+2*E_mean*E_std)
-        X_err = math.sqrt(M2_std+2*M_mean*M_std)
-        return M_mean, E_mean, M_std, E_std, CV, X, CV_err, X_err
-    except:
-        logging.error("Temp={0}: Error getting plot values".format(temp))
-        return False
 
-def plot_graphs(temp_arr,M_mean_arr,M_std_arr,E_mean_arr,E_std_arr, CV_arr, X_arr, CV_err_arr, X_err_arr): #plot graphs at end
+def plot_graphs(temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr): #plot graphs at end
     plt.figure(1)
     plt.ylim(0,1)
     plt.errorbar(temp_arr, np.absolute(M_mean_arr), yerr=M_std_arr, uplims=True, lolims=True,fmt='o')
@@ -193,7 +193,7 @@ def write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,nu
             writer.writerow(['Lattice Size (NxN)','Total Steps','Steps Used in Analysis','Burnin Steps','Interaction Strength','Applied Mag Field','Spin Prop'])
             writer.writerow([n,num_steps,num_analysis,num_burnin,j,b,flip_prop])
             writer.writerow([])
-            writer.writerow(['Temp','Mean Mag','SD Mag','Mean Enegy','SD Energy','CV','X','CV_err','X_err'])
+            writer.writerow(['Temp','K','spatial spin correlation'])
     except:
         logging.error('Could not save simulation parameters. Exiting simulation')
         sys.exit()
