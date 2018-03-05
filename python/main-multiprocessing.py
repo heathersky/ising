@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from ising import run_ising #import run_ising function from ising.py
 import multiprocessing as mp
 
-def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,data_listener,corr_listener,plots):
+def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,data_listener,corr_listener,traj_listener,plots):
     print("Working on Temp {0}".format(round(temp,3)))
     
     try:
@@ -22,35 +22,43 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
             B = 1/(K_b*temp)
             M_mean = np.average(Msamp[-num_analysis:])
             E_mean = np.average(Esamp[-num_analysis:])
-            M2 = [x**2 for x in Msamp]
-            E2 = [x**2 for x in Esamp]
-            M2_mean = np.average(M2[-num_analysis:])
-            E2_mean = np.average(E2[-num_analysis:])
             M_std = np.std(Msamp[-num_analysis:])
             E_std = np.std(Esamp[-num_analysis:])
-            M2_std = np.std(M2[-num_analysis:])
-            E2_std = np.std(E2[-num_analysis:])
-            CV = (B/temp)*(E2_mean-(E_mean**2))
-            X = B*(M2_mean-(M_mean**2))
+            CV = (B/temp)*(E_std**2))
+            X = B*(M_std**2)
+					   
 			
-            #CVs = []
-            #Xs = []
-            #for i in range(0, 10):
-            #    M_means = np.average(Msamp[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
-            #    E_means = np.average(Esamp[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
-            #    M2_means = np.average(M2[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
-            #    E2_means = np.average(E2[-num_analysis+(i*5000):-num_analysis+(i*5000)+1000])
-            #    CVs[i] = (B/temp)*(E2_means-(E_means**2))
-            #    Xs[i] = B*(M2_means-(M_means**2))
+            CVs = []
+            Xs = []
+            bins = 50
+            bin_size = num_analysis/bins
+			
+            for i in range(0, 10):
+				bin_start = -num_analysis+(i)
+				bin_end = -num_analysis+(i*1000)+500
+				print([bin_start,bin_end])
+                M_means = np.average(Msamp[-num_analysis+(i*1000):-num_analysis+(i*1000)+500])
+				print([M_mean,M_means])
+                E_means = np.average(Esamp[-num_analysis+(i*1000):-num_analysis+(i*1000)+500])
+                M2_means = np.average(M2[-num_analysis+(i*1000):-num_analysis+(i*1000)+500])
+                E2_means = np.average(E2[-num_analysis+(i*1000):-num_analysis+(i*1000)+500])				
+                CVs.append([i,(B/temp)*(E2_means-(E_means**2))])
+                Xs.append([i,B*(M2_means-(M_means**2))])
             	
-            CV_err = 1 #np.std(CVs)
-            X_err = 1 #np.std(Xs)
-
+            CV_err = np.std(CVs)
+            X_err = np.std(Xs)
+			
+            traj_array = []	
+            if temp == 2.1:
+                traj_array = Msamp	
+			traj_listener.put(traj_array)
+            
             data_array = [np.abs(M_mean),M_std,E_mean,E_std,CV,CV_err,X,X_err]
             data_listener.put([temp]+data_array)
 
             corr = compute_autocorrelation(spin)
             [corr_listener.put([temp]+corr_value) for corr_value in corr]
+
 
             print("Done with Temp {0}".format(round(temp,3)))
             return True
@@ -63,6 +71,7 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
         print("\n\nProgram Terminated. Good Bye!")
         data_listener.put('kill')
         corr_listener.put('kill')
+        traj_listener.put('kill')
         sys.exit()
 
     except:
@@ -87,8 +96,8 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
 @click.option('--plots', default=True, help='Turn Automatic Plot Creation Off or On',type=bool)
 
 def main(t_min,t_max,t_step,n,num_steps,num_analysis,num_burnin,j,b,flip_prop,output,plots):
-    data_filename, corr_filename = initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop)
-    run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,plots)
+    data_filename, corr_filename, traj_filename = initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop)
+    run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,plots)
     print('\n\nSimulation Finished! Data written to '+ data_filename)
     if plots:
         #initialize vars for plotting values
@@ -100,10 +109,10 @@ def main(t_min,t_max,t_step,n,num_steps,num_analysis,num_burnin,j,b,flip_prop,ou
                 param = next(reader)
                 line3 = next(reader)
                 dat_header = next(reader)
-                print("skipping headers")
+                #print("skipping headers")
                 # iterate over remaining lines
                 for row in reader:
-                    print(row)
+                    #print(row)
                     temp_arr.append(float(row[0]))
                     M_mean_arr.append(float(row[1]))
                     M_std_arr.append(float(row[2]))
@@ -113,18 +122,18 @@ def main(t_min,t_max,t_step,n,num_steps,num_analysis,num_burnin,j,b,flip_prop,ou
                     CV_err_arr.append(float(row[6]))
                     X_arr.append(float(row[7]))
                     X_err_arr.append(float(row[8]))
-            plot_graphs(temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr)
             print("plotting")
+            plot_graphs(temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr)
         except:
             logging.error('Could not read dat file.')
             sys.exit()
-
+    sys.exit()
 def initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop):
     check_step_values(num_steps, num_analysis, num_burnin)
-    data_filename, corr_filename = get_filenames(output)
-    write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop)
+    data_filename, corr_filename, traj_filename = get_filenames(output)
+    write_sim_parameters(data_filename,corr_filename,traj_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop)
     print('\nSimulation Started! Data will be written to ' + data_filename + '\n')
-    return data_filename, corr_filename
+    return data_filename, corr_filename, traj_filename
 
 def plot_graphs(temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr): #plot graphs at end
     plt.figure(1)
@@ -161,8 +170,9 @@ def get_filenames(dirname): #make data folder if doesn't exist, then specify fil
             os.makedirs(dirname)
         data_filename = os.path.join(dirname,'data_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
         corr_filename = os.path.join(dirname,'corr_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
+        traj_filename = os.path.join(dirname,'traj_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
         #Write simulation parameters to file
-        return data_filename, corr_filename
+        return data_filename, corr_filename, traj_filename
     except:
         raise ValueError('Directory name not valid. Exiting simulation.')
         sys.exit()
@@ -178,7 +188,7 @@ def get_temp_array(t_min,t_max,t_step):
         raise ValueError('Error creating temperature array. Exiting simulation.')
         sys.exit()
 
-def write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop):
+def write_sim_parameters(data_filename,corr_filename,traj_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop):
     try:
         with open(data_filename,'w') as csv_file:
             writer = csv.writer(csv_file, delimiter=',', lineterminator='\n')
@@ -186,7 +196,7 @@ def write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,nu
             writer.writerow(['Lattice Size (NxN)','Total Steps','Steps Used in Analysis','Burnin Steps','Interaction Strength','Applied Mag Field','Spin Prop'])
             writer.writerow([n,num_steps,num_analysis,num_burnin,j,b,flip_prop])
             writer.writerow([])
-            writer.writerow(['Temp','Mean Mag','SD Mag','Mean Enegy','SD Energy','CV','X','CV_err','X_err'])
+            writer.writerow(['Temp','Mean Mag','SD Mag','Mean Enegy','SD Energy','CV','CV_err','X','X_err'])
         with open(corr_filename,'w') as csv_file:
             writer = csv.writer(csv_file, delimiter=',', lineterminator='\n')
             #Write simulations parameters to CSV file
@@ -194,6 +204,12 @@ def write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,nu
             writer.writerow([n,num_steps,num_analysis,num_burnin,j,b,flip_prop])
             writer.writerow([])
             writer.writerow(['Temp','K','spatial spin correlation'])
+        with open(traj_filename,'w') as csv_file:
+            writer = csv.writer(csv_file, delimiter=',', lineterminator='\n')
+            #Write example trajectory to CSV file
+            writer.writerow(['Lattice Size (NxN)','Total Steps','Steps Used in Analysis','Burnin Steps','Interaction Strength','Applied Mag Field','Spin Prop'])
+            writer.writerow([n,num_steps,num_analysis,num_burnin,j,b,flip_prop])
+            writer.writerow([])
     except:
         logging.error('Could not save simulation parameters. Exiting simulation')
         sys.exit()
@@ -226,22 +242,24 @@ def listener(q, fn):
         f.flush()
     f.close()
 
-def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,plots):
+def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,plots):
     
     T = get_temp_array(t_min, t_max, t_step)
     
     #must use Manager queue here, or will not work
     manager = mp.Manager()
     data_listener = manager.Queue()
-    corr_listener = manager.Queue()    
+    corr_listener = manager.Queue()
+    traj_listener = manager.Queue()    
     pool = mp.Pool(mp.cpu_count())
 
     #put listener to work first
     data_watcher = pool.apply_async(listener, args=(data_listener, data_filename,))
     corr_watcher = pool.apply_async(listener, args=(corr_listener, corr_filename,))
-
+    traj_watcher = pool.apply_async(listener, args=(traj_listener, traj_filename,))
+	
     #fire off workers 
-    jobs = [pool.apply_async(run_simulation, args=(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,data_listener,corr_listener,plots)) for index,temp in enumerate(T)]
+    jobs = [pool.apply_async(run_simulation, args=(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,data_listener,corr_listener,traj_listener,plots)) for index,temp in enumerate(T)]
 
     # collect results from the workers through the pool result queue   
     [job.get() for job in jobs]
@@ -249,6 +267,7 @@ def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_pr
     #now we are done, kill the listener
     data_listener.put('kill')
     corr_listener.put('kill')
+    traj_listener.put('kill')
     pool.close()
 
 if __name__ == "__main__":
