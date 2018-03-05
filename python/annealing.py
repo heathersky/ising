@@ -2,7 +2,7 @@ def T_anneal(T, step, num_steps, num_burnin):
 
     #implement annealing code here
     T_a = float(T)
-    T_0 = 100
+    T_0 = T_a+1
     m = -T_0/float(num_burnin)
     T_step = m*float(step)+T_0
 
