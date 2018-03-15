@@ -10,24 +10,17 @@ import matplotlib.pyplot as plt
 from ising import run_ising #import run_ising function from ising.py
 import multiprocessing as mp
 
-def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,data_listener,corr_listener,plots,output):
+def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,data_listener,corr_listener,traj_listener,plots,output):
     print("Working on Temp {0}".format(round(temp,3)))
     
     try:
         #run the Ising model
         Msamp, Esamp, spin = run_ising(n,temp,num_steps,num_burnin,flip_prop,j,b,disable_tqdm=True)
 
+        traj = []
         try:
             if temp == 2.0:
-                #make traj file
-                traj_filename = TRAJ.csv #os.path.join(output,'traj_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
-                print("got traj filename %i" %traj_filename)
-                #write Msamp to file
-                f = open(traj_filename, 'a') 
-                writer = csv.writer(f, delimiter=',', lineterminator='\n')
-                writer.writerow(Msamp)
-                f.flush()
-                f.close()
+                traj = Esamp[0::10]
         except:
             logging.error("Temp="+str(round(temp,3))+": No example trajectory written")
 		
@@ -52,9 +45,13 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
                 bin_end = int(-num_analysis+(i+1)*bin_size)			
                 M_std_bin = np.std(Msamp[bin_start:bin_end])
                 E_std_bin = np.std(Esamp[bin_start:bin_end])
-                #print([M_std_bin,E_std_bin])				
-                CV_bin.append([i,(B/temp)*(E_std_bin**2)])
-                X_bin.append([i,B*(M_std_bin**2)])
+                #print([M_std_bin,E_std_bin])
+                cv_bin_val = (B/temp)*(E_std_bin**2)
+                x_bin_val = B*(M_std_bin**2)
+                #print(cv_bin_val)
+                #print(x_bin_val)				
+                CV_bin.append(cv_bin_val)
+                X_bin.append(x_bin_val)
                 #print(CV_bin)
                 #print(X_bin)				
             	
@@ -67,6 +64,7 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
             corr = compute_autocorrelation(spin)
             [corr_listener.put([temp]+corr_value) for corr_value in corr]
 
+            traj_listener.put(traj)
 
             print("Done with Temp {0}".format(round(temp,3)))
             return True
@@ -103,8 +101,8 @@ def run_simulation(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,
 @click.option('--plots', default=True, help='Turn Automatic Plot Creation Off or On',type=bool)
 
 def main(t_min,t_max,t_step,n,num_steps,num_analysis,num_burnin,j,b,flip_prop,output,plots):
-    data_filename, corr_filename = initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop)
-    run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,plots,output)
+    data_filename, corr_filename, traj_filename = initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop)
+    run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,plots,output)
     print('\n\nSimulation Finished! Data written to '+ data_filename)
     if plots:
         #initialize vars for plotting values
@@ -137,10 +135,11 @@ def main(t_min,t_max,t_step,n,num_steps,num_analysis,num_burnin,j,b,flip_prop,ou
     sys.exit()
 def initialize_simulation(n,num_steps,num_analysis,num_burnin,output,j,b,flip_prop):
     check_step_values(num_steps, num_analysis, num_burnin)
-    data_filename, corr_filename = get_filenames(output)
-    write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop)
+    data_filename, corr_filename, traj_filename = get_filenames(output)
+    write_sim_parameters(data_filename,corr_filename,traj_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop)
     print('\nSimulation Started! Data will be written to ' + data_filename + '\n')
-    return data_filename, corr_filename
+    print('Energy Markov Chain will be written to ' + traj_filename + '\n')
+    return data_filename, corr_filename, traj_filename
 
 def plot_graphs(temp_arr, M_mean_arr, M_std_arr, E_mean_arr, E_std_arr, CV_arr, CV_err_arr, X_arr, X_err_arr): #plot graphs at end
     plt.figure(1)
@@ -177,8 +176,9 @@ def get_filenames(dirname): #make data folder if doesn't exist, then specify fil
             os.makedirs(dirname)
         data_filename = os.path.join(dirname,'data_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
         corr_filename = os.path.join(dirname,'corr_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
+        traj_filename = os.path.join(dirname,'traj_'+str(time.strftime("%Y%m%d-%H%M%S"))+".csv")
         #Write simulation parameters to file
-        return data_filename, corr_filename
+        return data_filename, corr_filename, traj_filename
     except:
         raise ValueError('Directory name not valid. Exiting simulation.')
         sys.exit()
@@ -194,7 +194,7 @@ def get_temp_array(t_min,t_max,t_step):
         raise ValueError('Error creating temperature array. Exiting simulation.')
         sys.exit()
 
-def write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop):
+def write_sim_parameters(data_filename,corr_filename,traj_filename,n,num_steps,num_analysis,num_burnin,j,b,flip_prop):
     try:
         with open(data_filename,'w') as csv_file:
             writer = csv.writer(csv_file, delimiter=',', lineterminator='\n')
@@ -210,6 +210,13 @@ def write_sim_parameters(data_filename,corr_filename,n,num_steps,num_analysis,nu
             writer.writerow([n,num_steps,num_analysis,num_burnin,j,b,flip_prop])
             writer.writerow([])
             writer.writerow(['Temp','K','spatial spin correlation'])
+        with open(traj_filename,'w') as csv_file:
+            writer = csv.writer(csv_file, delimiter=',', lineterminator='\n')
+            #Write simulations parameters to CSV file
+            writer.writerow(['Lattice Size (NxN)','Total Steps','Steps Used in Analysis','Burnin Steps','Interaction Strength','Applied Mag Field','Spin Prop'])
+            writer.writerow([n,num_steps,num_analysis,num_burnin,j,b,flip_prop])
+            writer.writerow([])
+            writer.writerow(['Esamp'])
     except:
         logging.error('Could not save simulation parameters. Exiting simulation')
         sys.exit()
@@ -242,7 +249,7 @@ def listener(q, fn):
         f.flush()
     f.close()
 
-def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,plots,output):
+def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,plots,output):
     
     T = get_temp_array(t_min, t_max, t_step)
     
@@ -250,14 +257,16 @@ def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_pr
     manager = mp.Manager()
     data_listener = manager.Queue()
     corr_listener = manager.Queue()  
+    traj_listener = manager.Queue() 
     pool = mp.Pool(mp.cpu_count())
 
     #put listener to work first
     data_watcher = pool.apply_async(listener, args=(data_listener, data_filename,))
     corr_watcher = pool.apply_async(listener, args=(corr_listener, corr_filename,))
+    traj_watcher = pool.apply_async(listener, args=(traj_listener, traj_filename,))
 	
     #fire off workers 
-    jobs = [pool.apply_async(run_simulation, args=(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,data_listener,corr_listener,plots,output)) for index,temp in enumerate(T)]
+    jobs = [pool.apply_async(run_simulation, args=(index,temp,n,num_steps,num_burnin,num_analysis,flip_prop,j,b,data_filename,corr_filename,traj_filename,data_listener,corr_listener,traj_listener,plots,output)) for index,temp in enumerate(T)]
 
     # collect results from the workers through the pool result queue   
     [job.get() for job in jobs]
@@ -265,6 +274,7 @@ def run_processes(t_min,t_max,t_step,n,num_steps,num_burnin,num_analysis,flip_pr
     #now we are done, kill the listener
     data_listener.put('kill')
     corr_listener.put('kill')
+    traj_listener.put('kill')
     pool.close()
 
 if __name__ == "__main__":
